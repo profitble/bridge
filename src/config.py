@@ -16,9 +16,7 @@ class Config:
     
     @classmethod
     def validate(cls):
-        if not cls.GEMINI_API_KEY:
-            raise ValueError("GEMINI_API_KEY environment variable is required")
-        
+        # GEMINI_API_KEY is optional - only needed for AI features
         if cls.POLL_INTERVAL <= 0:
             raise ValueError("POLL_INTERVAL must be positive")
         if cls.MESSAGE_HISTORY_LIMIT < 0:

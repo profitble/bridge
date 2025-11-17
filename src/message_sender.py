@@ -108,15 +108,15 @@ end tell'''
             return False
     
     async def send_message(self, recipient: str, message_text: str) -> bool:
-        escaped_message = self._escape_applescript_string(message_text)
-        escaped_recipient = self._escape_applescript_string(recipient)
-        
-        # Use stdin to avoid shell interpretation of newlines and quotes
-        applescript = f'''tell application "Messages"
-    set targetService to 1st account whose service type = iMessage
-    set targetBuddy to participant "{escaped_recipient}" of targetService
-    send "{escaped_message}" to targetBuddy
-end tell'''
+        # Use on run handler with arguments to avoid all escaping issues
+        # Arguments are passed separately, so no need to escape quotes or special characters
+        applescript = '''on run {recipient, message}
+    tell application "Messages"
+        set targetService to 1st account whose service type = iMessage
+        set targetBuddy to participant recipient of targetService
+        send message to targetBuddy
+    end tell
+end run'''
         
         max_retries = Config.APPLESCRIPT_RETRY_COUNT
         base_delay = Config.APPLESCRIPT_RETRY_DELAY
@@ -125,9 +125,13 @@ end tell'''
             try:
                 logger.debug(f"Sending message via AppleScript (attempt {attempt + 1}/{max_retries})")
                 
+                # Pass recipient and message_text as separate arguments after '-'
+                # osascript will pass them to the 'on run' handler
                 process = await asyncio.create_subprocess_exec(
                     'osascript',
-                    '-',  # Read from stdin instead of -e
+                    '-',  # Read script from stdin
+                    recipient,  # First argument to 'on run' handler
+                    message_text,  # Second argument to 'on run' handler
                     stdin=asyncio.subprocess.PIPE,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE

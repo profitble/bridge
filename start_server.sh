@@ -20,10 +20,18 @@ if [ ! -d "venv" ]; then
     echo "Creating virtual environment..."
     python3 -m venv venv
     source venv/bin/activate
+    pip install --upgrade pip
     pip install -r requirements.txt
 else
     source venv/bin/activate
-    pip install -q -r requirements.txt
+    pip install --upgrade pip
+    pip install -r requirements.txt
+fi
+
+# Verify dependencies are installed
+if ! python3 -c "import dotenv" 2>/dev/null; then
+    echo "Error: Dependencies not installed properly. Installing now..."
+    pip install -r requirements.txt
 fi
 
 # Get the local IP address
@@ -43,6 +51,6 @@ echo "Press Ctrl+C to stop"
 echo "=========================================="
 echo ""
 
-# Run the server
-python3 -m src.http_server
+# Run the server (use python from venv)
+python -m src.http_server
 

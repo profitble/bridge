@@ -23,32 +23,16 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-# Add parent directory to path to import existing modules
-# The iMessage backend code should be in the same directory structure
-# We'll look for it in common locations
-project_root = Path(__file__).parent.parent.parent
-imessage_locations = [
-    project_root / 'imessage-bridge',  # Current unified location
-    project_root / 'imessage',  # Legacy location
-    project_root.parent / 'imessage-bridge',
-]
+# Add current directory and src to path for imports
+# The script should be run from the bridge directory
+current_dir = Path(__file__).parent.parent
+src_dir = current_dir / 'src'
 
-imessage_root_path = None
-for path in imessage_locations:
-    if path.exists() and (path / 'src').exists():
-        imessage_root_path = path
-        break
-
-if imessage_root_path:
-    imessage_src_path = imessage_root_path / 'src'
-    # Change to imessage-bridge directory so imports work
-    os.chdir(str(imessage_root_path))
-    sys.path.insert(0, str(imessage_src_path))
-    sys.path.insert(0, str(imessage_root_path))
-    logger.info(f"Found iMessage backend at: {imessage_root_path}")
-else:
-    logger.error("Could not find iMessage backend code. Please ensure it's in one of the expected locations.")
-    logger.error(f"Searched in: {[str(p) for p in imessage_locations]}")
+# Change to bridge directory so imports work
+os.chdir(str(current_dir))
+sys.path.insert(0, str(src_dir))
+sys.path.insert(0, str(current_dir))
+logger.info(f"Using iMessage backend at: {current_dir}")
 
 from aiohttp import web, WSMsgType
 from src.database import ConversationDatabase

@@ -37,7 +37,6 @@ logger.info(f"Using iMessage backend at: {current_dir}")
 from aiohttp import web, WSMsgType
 from src.database import ConversationDatabase
 from src.message_sender import MessageSender
-from src.messages_reader import MessagesReader
 from src.config import Config
 
 class HTTPBridgeServer:
@@ -61,7 +60,6 @@ class HTTPBridgeServer:
             db_path = project_root / 'conversation_state.db'
         
         self.db = ConversationDatabase(db_path=str(db_path))
-        self.messages_reader = MessagesReader()
         self.message_sender = MessageSender()
         self.websocket_clients: Set[web.WebSocketResponse] = set()
         self.running = False
@@ -70,38 +68,35 @@ class HTTPBridgeServer:
     async def init(self):
         """Initialize database connection"""
         await self.db.init_db()
-        await self.messages_reader.connect()
         logger.info("HTTP Bridge Server initialized")
     
     async def get_all_conversations(self, request):
         """GET /conversations - List all conversations"""
         try:
-            # First try to get conversations from macOS Messages database
-            conversations = await self.messages_reader.get_all_conversations()
+            # Get unique sender IDs with their last message info
+            cursor = await self.db.db.execute('''
+                SELECT 
+                    sender_id,
+                    MAX(timestamp) as last_timestamp,
+                    (SELECT message_text FROM messages m2 
+                     WHERE m2.sender_id = m1.sender_id 
+                     ORDER BY m2.timestamp DESC LIMIT 1) as last_message
+                FROM messages m1
+                GROUP BY sender_id
+                ORDER BY last_timestamp DESC
+            ''')
             
-            # If no conversations found in Messages database, check local database
-            if not conversations:
-                cursor = await self.db.db.execute('''
-                    SELECT 
-                        sender_id,
-                        MAX(timestamp) as last_timestamp,
-                        (SELECT message_text FROM messages m2 
-                         WHERE m2.sender_id = m1.sender_id 
-                         ORDER BY m2.timestamp DESC LIMIT 1) as last_message
-                    FROM messages m1
-                    GROUP BY sender_id
-                    ORDER BY last_timestamp DESC
-                ''')
-                
-                rows = await cursor.fetchall()
-                for row in rows:
-                    sender_id, last_timestamp, last_message = row
-                    conversations.append({
-                        'sender_id': sender_id,
-                        'last_message': last_message or '',
-                        'last_timestamp': last_timestamp,
-                        'unread_count': 0
-                    })
+            rows = await cursor.fetchall()
+            conversations = []
+            
+            for row in rows:
+                sender_id, last_timestamp, last_message = row
+                conversations.append({
+                    'sender_id': sender_id,
+                    'last_message': last_message or '',
+                    'last_timestamp': last_timestamp,
+                    'unread_count': 0  # TODO: Implement unread tracking
+                })
             
             return web.json_response(conversations)
         except Exception as e:
@@ -115,12 +110,7 @@ class HTTPBridgeServer:
             if not sender_id:
                 return web.json_response({'error': 'sender_id required'}, status=400)
             
-            # First try to get messages from macOS Messages database
-            history = await self.messages_reader.get_messages_for_contact(sender_id, limit=100)
-            
-            # If no messages found, check local database
-            if not history:
-                history = await self.db.get_conversation_history(sender_id, limit=100)
+            history = await self.db.get_conversation_history(sender_id, limit=100)
             
             # Format messages for frontend
             messages = []
@@ -154,6 +144,7 @@ class HTTPBridgeServer:
                 )
             
             # Send message using existing MessageSender
+            logger.info(f"Attempting to send message to {recipient}: {message_text[:50]}...")
             success = await self.message_sender.send_message(recipient, message_text)
             
             if success:
@@ -168,9 +159,14 @@ class HTTPBridgeServer:
                     'timestamp': datetime.now().timestamp()
                 })
                 
+                logger.info(f"Successfully sent message to {recipient}")
                 return web.json_response({'success': True})
             else:
-                return web.json_response({'error': 'Failed to send message'}, status=500)
+                logger.error(f"Failed to send message to {recipient} - AppleScript returned False")
+                return web.json_response({
+                    'error': 'Failed to send message',
+                    'hint': 'Check bridge server logs for AppleScript errors. Make sure Messages.app has automation permissions.'
+                }, status=500)
                 
         except Exception as e:
             logger.error(f"Error sending message: {e}", exc_info=True)
@@ -328,7 +324,6 @@ class HTTPBridgeServer:
                 pass
             await runner.cleanup()
             await self.db.close()
-            await self.messages_reader.close()
 
 async def main():
     server = HTTPBridgeServer()

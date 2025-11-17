@@ -143,9 +143,19 @@ class HTTPBridgeServer:
                     status=400
                 )
             
+            # Normalize phone number - ensure it starts with +1 if it's a US number
+            normalized_recipient = recipient.strip()
+            if normalized_recipient and not normalized_recipient.startswith('+'):
+                # Remove all non-digits
+                digits_only = ''.join(filter(str.isdigit, normalized_recipient))
+                if len(digits_only) == 10:
+                    normalized_recipient = f"+1{digits_only}"
+                elif len(digits_only) == 11 and digits_only.startswith('1'):
+                    normalized_recipient = f"+{digits_only}"
+            
             # Send message using existing MessageSender
-            logger.info(f"Attempting to send message to {recipient}: {message_text[:50]}...")
-            success = await self.message_sender.send_message(recipient, message_text)
+            logger.info(f"Attempting to send message to {normalized_recipient}: {message_text[:50]}...")
+            success = await self.message_sender.send_message(normalized_recipient, message_text)
             
             if success:
                 # Save to database

@@ -113,13 +113,12 @@ class MessageSender:
         escaped_message = self._escape_applescript_string(message_text)
         escaped_recipient = self._escape_applescript_string(recipient)
         
-        applescript = f'''
-        tell application "Messages"
-            set targetService to 1st account whose service type = iMessage
-            set targetBuddy to participant "{escaped_recipient}" of targetService
-            send "{escaped_message}" to targetBuddy
-        end tell
-        '''
+        # Use single quotes in AppleScript to avoid quote escaping issues
+        applescript = f'''tell application "Messages"
+    set targetService to 1st account whose service type = iMessage
+    set targetBuddy to participant "{escaped_recipient}" of targetService
+    send "{escaped_message}" to targetBuddy
+end tell'''
         
         max_retries = Config.APPLESCRIPT_RETRY_COUNT
         base_delay = Config.APPLESCRIPT_RETRY_DELAY

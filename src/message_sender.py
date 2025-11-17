@@ -19,48 +19,47 @@ class MessageSender:
     async def navigate_to_chat_and_type_dot(self, recipient: str) -> bool:
         escaped_recipient = self._escape_applescript_string(recipient)
         
-        applescript = f'''
-        tell application "Messages"
-            activate
-        end tell
-        
-        delay 0.5
-        
-        tell application "System Events"
-            tell process "Messages"
-                try
-                    set frontmost to true
-                    delay 0.3
-                    
-                    keystroke "n" using command down
-                    delay 0.4
-                    
-                    keystroke "{escaped_recipient}"
-                    delay 0.4
-                    
-                    keystroke tab
-                    delay 0.2
-                    
-                    keystroke "."
-                    
-                on error errMsg
-                    log errMsg
-                end try
-            end tell
-        end tell
-        '''
+        applescript = f'''tell application "Messages"
+    activate
+end tell
+
+delay 0.5
+
+tell application "System Events"
+    tell process "Messages"
+        try
+            set frontmost to true
+            delay 0.3
+            
+            keystroke "n" using command down
+            delay 0.4
+            
+            keystroke "{escaped_recipient}"
+            delay 0.4
+            
+            keystroke tab
+            delay 0.2
+            
+            keystroke "."
+            
+        on error errMsg
+            log errMsg
+        end try
+    end tell
+end tell'''
         
         try:
             logger.debug(f"Showing typing indicator for {recipient}")
             
             process = await asyncio.create_subprocess_exec(
                 'osascript',
-                '-e', applescript,
+                '-',  # Read from stdin
+                stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
             
-            stdout, stderr = await process.communicate()
+            stdout, stderr = await process.communicate(input=applescript.encode('utf-8'))
             
             if process.returncode == 0:
                 logger.info(f"Typing indicator shown for {recipient}")
@@ -76,33 +75,32 @@ class MessageSender:
     
     
     async def clear_dot_from_message_field(self) -> bool:
-        applescript = '''
-        tell application "System Events"
-            tell process "Messages"
-                try
-                    keystroke "a" using command down
-                    delay 0.05
-                    key code 51
-                    delay 0.05
-                    key code 53
-                on error errMsg
-                    log errMsg
-                end try
-            end tell
-        end tell
-        '''
+        applescript = '''tell application "System Events"
+    tell process "Messages"
+        try
+            keystroke "a" using command down
+            delay 0.05
+            key code 51
+            delay 0.05
+            key code 53
+        on error errMsg
+            log errMsg
+        end try
+    end tell
+end tell'''
         
         try:
             logger.debug("Clearing dot and closing new message window")
             
             process = await asyncio.create_subprocess_exec(
                 'osascript',
-                '-e', applescript,
+                '-',  # Read from stdin
+                stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
             
-            await process.communicate()
+            await process.communicate(input=applescript.encode('utf-8'))
             return True
                 
         except Exception as e:
@@ -113,15 +111,12 @@ class MessageSender:
         escaped_message = self._escape_applescript_string(message_text)
         escaped_recipient = self._escape_applescript_string(recipient)
         
-        # Build AppleScript line by line to avoid quote issues
-        applescript_lines = [
-            'tell application "Messages"',
-            '    set targetService to 1st account whose service type = iMessage',
-            f'    set targetBuddy to participant "{escaped_recipient}" of targetService',
-            f'    send "{escaped_message}" to targetBuddy',
-            'end tell'
-        ]
-        applescript = '\n'.join(applescript_lines)
+        # Use stdin to avoid shell interpretation of newlines and quotes
+        applescript = f'''tell application "Messages"
+    set targetService to 1st account whose service type = iMessage
+    set targetBuddy to participant "{escaped_recipient}" of targetService
+    send "{escaped_message}" to targetBuddy
+end tell'''
         
         max_retries = Config.APPLESCRIPT_RETRY_COUNT
         base_delay = Config.APPLESCRIPT_RETRY_DELAY
@@ -132,12 +127,13 @@ class MessageSender:
                 
                 process = await asyncio.create_subprocess_exec(
                     'osascript',
-                    '-e', applescript,
+                    '-',  # Read from stdin instead of -e
+                    stdin=asyncio.subprocess.PIPE,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE
                 )
                 
-                stdout, stderr = await process.communicate()
+                stdout, stderr = await process.communicate(input=applescript.encode('utf-8'))
                 
                 if process.returncode == 0:
                     logger.info(f"Successfully sent message to {recipient}")
